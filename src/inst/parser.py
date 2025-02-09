@@ -5,9 +5,8 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
+from .types import MediaType, InstException, Media, Post, Story
 
-class InstException(Exception):
-    """Base class for exceptions in this module."""
 
 
 class InterfaceInstParser(ABC):
@@ -16,11 +15,11 @@ class InterfaceInstParser(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_user_stories(self, user_id: str) -> List[str]:
+    def get_user_stories(self, user_id: str) -> List[Story]:
         raise NotImplementedError
 
     @abstractmethod
-    def get_user_posts(self, user_id: str, count: int = 10) -> List[Dict[str, Any]]:
+    def get_user_posts(self, user_id: str, count: int = 10) -> List[Post]:
         raise NotImplementedError
 
 
@@ -62,7 +61,7 @@ class InstParser(InterfaceInstParser):
         self.set_headers(data.get("headers"))
         self._is_logged = True
 
-    def _request(self, method: str, url: str) -> Any:
+    def _request(self, method: str, url: str) -> requests.Response:
         if not self.is_logged:
             raise InstException("Not logged in")
 
@@ -87,14 +86,14 @@ class InstParser(InterfaceInstParser):
         return data["data"]["user"]["id"]
 
 
-    def get_user_stories(self, user_id: str) -> List[str]:
+    def get_user_stories(self, user_id: str) -> List[Story]:
         """Get user stories
 
         Args:
             user_id (str): User id
 
         Returns:
-            List[str]: List of urls on stories
+            List[Story]: List of stories
         """
         url = f"https://www.instagram.com/api/v1/feed/reels_media/?reel_ids={user_id}"
         response = self._request("GET", url)
@@ -104,7 +103,10 @@ class InstParser(InterfaceInstParser):
 
         data = response.json()
         stories = data.get("reels", {}).get(user_id, {}).get("items", [])
-        return [story["video_versions"][0]["url"] if "video_versions" in story else story["image_versions2"]["candidates"][0]["url"] for story in stories]
+        return [Story(Media(
+            type=MediaType.VIDEO.value if "video_versions" in story else MediaType.IMAGE.value,
+            url=story["video_versions"][0]["url"] if "video_versions" in story else story["image_versions2"]["candidates"][0]["url"],
+        )) for story in stories]
 
     def get_user_posts(self, user_id: str, count: int = 10) -> List[Dict[str, Any]]:
         """Get user posts
@@ -114,13 +116,7 @@ class InstParser(InterfaceInstParser):
             count (int, optional): Count of posts. Defaults to 10.
 
         Returns:
-            List[Dict[str, Any]]: List of posts
-
-        Types:
-            Post = {
-                "media": List[str],
-                "caption": str
-            }
+            List[Post]: List of posts
         """
         url = f"https://www.instagram.com/api/v1/feed/user/{user_id}/?count={count}"
         response = self._request("GET", url)
@@ -131,14 +127,19 @@ class InstParser(InterfaceInstParser):
         data = response.json()
         posts = []
         for item in data.get("items", []):
-            media_urls = []
+            media_list = []
             if "carousel_media" in item:
                 for media in item["carousel_media"]:
-                    media_urls.append(media.get("video_versions", [{}])[0].get("url") or media.get("image_versions2", {}).get("candidates", [{}])[0].get("url"))
+                    media_type = MediaType.VIDEO.value if "video_versions" in media else MediaType.IMAGE.value
+                    media_url = media.get("video_versions", [{}])[0].get("url") or media.get("image_versions2", {}).get("candidates", [{}])[0].get("url")
+                    media_list.append(Media(type=media_type, url=media_url))
             else:
-                media_urls.append(item.get("video_versions", [{}])[0].get("url") or item.get("image_versions2", {}).get("candidates", [{}])[0].get("url"))
-            posts.append({
-                "media": media_urls,
-                "caption": item.get("caption", {}).get("text", "")
-            })
+                media_type = MediaType.VIDEO.value if "video_versions" in item else MediaType.IMAGE.value
+                media_url = item.get("video_versions", [{}])[0].get("url") or item.get("image_versions2", {}).get("candidates", [{}])[0].get("url")
+                media_list.append(Media(type=media_type, url=media_url))
+
+            posts.append(Post(
+                media_list=media_list,
+                caption=item.get("caption", {}).get("text", ""),
+            ))
         return posts
