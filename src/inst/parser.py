@@ -8,8 +8,9 @@ import requests
 from .types import MediaType, InstException, Media, Post, Story
 
 
-
 class InterfaceInstParser(ABC):
+    default_timeout = 45
+
     @abstractmethod
     def get_user_id(self, username: str) -> str:
         raise NotImplementedError
@@ -29,6 +30,7 @@ class InstParser(InterfaceInstParser):
         cookies: Optional[Dict[str, str]] = None,
         headers: Optional[Dict[str, str]] = None,
         proxy: Optional[str] = None,
+        timeout: Optional[int] = None,
     ) -> None:
         self._is_logged: bool = False
         self.set_cookies(cookies or {})
@@ -36,6 +38,7 @@ class InstParser(InterfaceInstParser):
         self._proxies: Optional[Dict[str, str]] = None
         if proxy:
             self.set_proxy(proxy)
+        self._timeout = timeout or self.default_timeout
 
     @property
     def is_logged(self) -> bool:
@@ -49,6 +52,9 @@ class InstParser(InterfaceInstParser):
 
     def set_cookies(self, cookies: Dict[str, str]) -> None:
         self._cookies = cookies
+
+    def set_timeout(self, timeout: int) -> None:
+        self._timeout = timeout
 
     def login_from_file(self, filename: str) -> None:
         if not os.path.exists(filename):
@@ -65,7 +71,8 @@ class InstParser(InterfaceInstParser):
         if not self.is_logged:
             raise InstException("Not logged in")
 
-        return requests.api.request(method.upper(), url, cookies=self._cookies, headers=self._headers, proxies=self._proxies)
+        return requests.api.request(method.upper(), url, cookies=self._cookies,
+                                    headers=self._headers, proxies=self._proxies, timeout=self._timeout)
     
     def get_user_id(self, username: str) -> str:
         """Get user id
